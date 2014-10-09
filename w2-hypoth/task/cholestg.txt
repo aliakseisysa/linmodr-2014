@@ -1,0 +1,36 @@
+Cholesterol Levels after Heart Attack
+
+Keywords: paired-samples t test, two-sample t test, repeated measures
+
+------------------------------------------------------------------------
+
+
+    Description
+
+A study was conducted at a major north eastern American medical centre
+regarding blood cholesterol levels and heart-attack incidents. A total
+of 28 heart-attack patients had their cholesterol levels measured two
+days, 4 days, and 14 days after the attack. In addition, cholesterol
+levels were recorded for a control group of 30 people who had not had a
+heart attack. The units of cholesterol measurement are not given in the
+original reference but are presumably mg/dL of blood.
+
+	
+------------------------------------------------------------------------
+	Variable 		Description
+	
+------------------------------------------------------------------------
+	Patient 		Patient number
+	Group 		1 = heart-attack patient, 2 = control
+	Day 		Numbers of days since heart attack
+	Cholest 		Cholesterol level
+	
+------------------------------------------------------------------------
+
+    Source
+
+Ryan, B. F., Joiner, B. L., and Ryan Jr, T. A. (1985). /Minitab Handbook
+Second Edition/. Duxbury Press, Boston.
+
+The data is given in Table 1.1 and is attributed as being "from a study
+conducted by a major northeastern medical center".
