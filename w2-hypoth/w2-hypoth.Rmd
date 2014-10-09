@@ -1,0 +1,774 @@
+---
+title       : Тестирование статистических гипотез
+subtitle    : Спецглавы по матобработке данных на R, осень 2014
+author      : Вадим Хайтов
+job         : Каф. Зоологии беспозвоночных, СПбГУ
+framework   : io2012        # {io2012, html5slides, shower, dzslides, ...}
+highlighter : highlight.js  # {highlight.js, prettify, highlight}
+hitheme     : idea      # 
+widgets     : [mathjax]            # {mathjax, quiz, bootstrap}
+mode        : standalone # {selfcontained, standalone, draft}
+---
+
+
+# Вы сможете
+
+- Уверенно объяснить, что такое статистический критерий и как он работает
+- Применить команды R для проверки наиболее распространенных типов гипотез
+- Понять что такое пермутационный метод тестирования гипотез
+- Написать R код, позволяющий реализовать пермутационный метод 
+
+
+```{r setup, include = FALSE, cache = FALSE, eval = -3}
+#----------------------------------------------------------------
+# RUN THE FRAGMENT BETWEEN LINES BEFORE COMPILING MARKDOWN
+# to configure markdown parsing
+options(markdown.extensions = 
+          c("no_intra_emphasis",# skip markdown embedded in words
+            "tables",           # create HTML tables
+            "fenced_code",      # treat text as verbatim when surrounded with begin and ending lines with three ~ or ' characters.
+            "autolink",         # create HTML links from urls and email addresses.
+            "strikethrough",    # create strikethroughs by surrounding text with ~~.
+            "lax_spacing",      # allow HTML tags inside paragraphs without being surrounded by newlines.
+            "space_headers",    # add a space between header hashes and the header itself.
+            "latex_math"))      # transforms all math equations into syntactically correct MathJax equations.
+#--------------------------------------------------------------
+# output options
+options(width = 90, # set the maximum number of columns on a line
+        scipen = 6, # fixed notation of floating point numbers, unless it is more than scipen digits wider, else - exponential notation
+        digits = 4) # the number of digits to print when printing numeric values
+
+# to render cyrillics in plots use cairo pdf
+options(device = function(file, width = 7, height = 7, ...) {
+  cairo_pdf(tempfile(), width = width, height = height, ...)
+  })
+
+# chunk default options
+library(knitr)
+opts_chunk$set(
+#   fig.align='center',  # default figure alignment
+               warnings = FALSE,
+               message = FALSE,
+               fig.width = 10,      # default figure width
+               fig.height = 6)      # default figure height
+
+# this allows for code formatting inline
+knit_hooks$set(inline = function(x) {
+   if (is.numeric(x)) return(knitr:::format_sci(x, 'latex'))
+   x = as.character(x)
+   h = knitr:::hilight_source(x, 'latex', list(prompt = FALSE, 
+                                               size='normalsize', 
+                                               highlight = FALSE))
+   h = gsub("([_#$%&])", "\\\\\\1", h)
+   h = gsub('(["\'])', '\\1{}', h)
+   gsub('^\\\\begin\\{alltt\\}\\s*|\\\\end\\{alltt\\}\\s*$', '', h)})
+```
+
+---
+
+# ЧАСТЬ 1. Основы основ
++ Нормальное распределение величин. 
++ Параметры распределения.
++ Выборочные оценки параметров распределения.
+
+--- &twocol
+
+# Нормальное распределение  
+
+*** =left
+
+*Распределение* - это функция, описывающая связь между значениями величины и вероятностью ее встречи в генеральной совокупности
+
+Нормальное распределение описывается такой формулой
+
+$$p= \frac {1}{\sigma \sqrt{2 \pi}} e^{-\frac{(x-\mu)^2}{2\sigma^2}}$$
+
+![Гаусс и функция Гаусса](figure/Gauss.png)
+
+*** =right
+
+График этой функции     
+
+```{r, echo=FALSE, fig.height=6, fig.width=7}
+library (ggplot2)
+x <- seq(0,20,0.1)
+Mu <- 10
+Sigma <- 2
+ggplot(data.frame(x=x, y=dnorm(x, Mu, Sigma)), aes(x=x, y=y)) + geom_line(color="blue", size=2) + geom_vline (xintercept = Mu) + ggtitle("Normal distribution") + xlab("Values") + ylab("Probability")
+
+
+```
+
+--- &twocol
+
+#                   Нормальное распределение  
+
+*** =left
+
+
+Нормальное распределение описывается такой формулой
+<br>
+<br>
+<br>
+<br>
+$$p= \frac {1}{\sigma \sqrt{2 \pi}} e^{-\frac{(x-\mu)^2}{2\sigma^2}}$$
+
+*** =right
+Как и любая функция, функция, описывающая нормальное распределение, имеет параметры
+  
+<br>
+<br>
+Два параметра нормального распределения  
+
++ $\mu$ - Наиболее часто встречающееся в генеральной совокупности знчение.  
++ $\sigma$ - Характеризует разброс, дисперсию, значений в генеральной совокупности.   
+
+
+
+----
+
+# Научимся делать выборки из генеральной совокупности с нормальным распределением величины
+
+Пусть у нас есть величина, для которой в генеральной совокупности $\mu = 50$, а $\sigma =  5$
+
+Возьмем из этой генеральной совокупности выборку в 150 объектов 
+
+```{r}
+set.seed(123)
+sample <- rnorm(150, 50, 5)
+sample <- data.frame(xi=sample)
+head (sample)
+```
+
+----
+
+# Научимся строить выборочные частотные распределения 
+
+```{r, fig.align='center', fig.height=5, fig.width=6}
+library(ggplot2)
+pl_sample_distribution <- ggplot(sample, aes(x=xi)) + 
+  geom_histogram(binwidth = 5, fill = "blue", color = "black") + 
+  xlab("Sampled values") + 
+  ylab("Count") +
+  ggtitle("Frequency distribution of sampled values")
+
+pl_sample_distribution
+```
+
+---
+
+# Другие формы отражения частотных распределений
+```{r, echo=FALSE, fig.align='center', fig.height=7, fig.width=8}
+library(gridExtra)
+pl_hist <- ggplot(data.frame(xi=sample), aes(x=xi)) + geom_histogram(binwidth = 5, fill = "blue", color = "black") + ggtitle("Frequency histogram") + xlab("Value")
+
+pl_polig <- ggplot(data.frame(xi=sample), aes(x=xi)) + geom_freqpoly(binwidth = 5, size=2) + ggtitle("Frequency polygon") + xlab("Value")
+
+pl_box <- ggplot(data.frame(xi=sample, mark=" "), aes(x=mark, y=xi)) + geom_boxplot(fill="blue") + ggtitle("Box and wiskers plot") + xlab(" ") + ylab("Value")
+
+pl_vio <- ggplot(data.frame(xi=sample, mark=" "), aes(x=mark, y=xi)) + geom_violin(fill="blue") + xlab(" ") + ggtitle("Violin plot") + ylab("Value")
+
+
+grid.arrange(pl_hist, pl_polig, pl_box, pl_vio, nrow=2)
+
+```
+
+--- &twocol
+
+*** =left
+
+# Выборочные оценки 
+
++ Оценкой параметра $\mu$ является среднеее значение в выборке 
+
+$$\bar{x}=\frac{\sum{x_i}}{n}$$
+
++ Оценкой параметра  $\sigma$ является среднеквадратичное отклонение
+
+$$sd=\sqrt{\frac{\sum{(x_i - \bar{x})^2}}{n-1}}$$
+
+ 
+```{r}
+mean(sample)
+sd(sample)
+```
+
+*** =right
+```{r, fig.height=6, fig.width=7}
+pl_sample_distribution
+```
+
+---
+# Задача
+<br>
+<br>
+А если мы возьмем не одну выборку, а много выборок одинакового размера (n) из той же генеральной совокупности, с теми же параметрами, то как будет распеределена такая величина?
+
+----
+#  Задание 
+<br>
+Пусть у вас имеется озеро, в котором плавают рыбы, и вы знаете, что в этой бесконечно большой популяции (генеральной совокупности) следующие параметры $\mu=50$ и $\sigma=5$. 
+
++ Напишите R код, который моделирует взятие одной выборки (по 150 особей в каждой): _вам понадобится функция `rnorm()`_
+
++ Смоделируйте процесс, взятия 1000 аналогичных выборок из той же генеральной совокупности: _вам понадобится функция `for(i in 1:1000){}`_ 
+
++ Создайте датафрейм, содержащий средние значения для этих выборок: _вам понадобятся функции `for()` и `mean()`_.
+
++ Постройте частотую гистограмму, отражающую распределение средних значений: *вам понадобится функция `ggplot()` вместе с геомом `geom_histogram()`*
+
++ Измените форму представления распределения на частотный полигон: *вам понадобится геом `geom_freqpoly()`*
+
+
+---- &twocol
+
+## Решение
+
+*** =left
+```{r}
+means <- data.frame(x_mean = numeric(1000))
+
+for (i in 1:1000) means[i,1] <- mean(rnorm(150, 50, 5)) 
+
+head(means)
+```
+
+*** =right
+```{r, fig.height=6, fig.width=7}
+ggplot(means, aes(x = x_mean)) + 
+  geom_histogram(binwidth=0.1, fill="blue", color="black") + 
+  geom_freqpoly(size=2, bin=0.1)
+  
+
+```
+
+---- 
+
+## Все то же самое, но совмещенное с распределением исходных величин в одной из выборок 
+
+```{r, echo=FALSE,  fig.align='center', fig.height=6, fig.width=7}
+
+ggplot(rbind(sample, data.frame(xi=rep(NA, (1000 - nrow(sample))))), aes(x = xi)) +
+  geom_histogram(binwidth = 5, fill = "gray") + 
+  xlab("Value") + 
+  geom_freqpoly(aes(x = means[,1]), binwidth=0.05, size=1.5) 
+
+```
+
+
+
+Видно, что размах варьирования средних значений заметно меньше, чем размах варьирования исходных зачений, попадающих в выборки.
+
+
+----
+
+Среднеквадратичное отклонение средних значений в генральной совокупности вычисляется по такой формуле
+
+$$ SD_\bar{x} = \frac{\sigma}{\sqrt{n}}$$
+
+
+Распределение средних значений, взятых из одной генеральной совокупности, имеет два праметра: 
++ $\mu$ 
++ $SD_\bar{x}$  
+
+>- Выборочная оценка величины $SD_\bar{x}$ называется _ошибкой среднего_
+
+>- $$ SE_\bar{x} = \frac{sd}{\sqrt{n}}$$
+
+
+---- &twocol
+
+# И последнее...
+
+Научимся стандартизировать распределения
+
+*** =left
+
+Ввведем величину 
+$$z_i=\frac{x_i - \bar{x}}{sd}$$
+```{r, echo=FALSE}
+sample <- sample[,1]
+```
+
+
+```{r}
+z <- (sample - mean(sample))/sd(sample)
+```
+
+Среднее значение этой величины будет всегда равно 0, а sd = 1
+```{r}
+mean(z)
+sd(z)
+
+```
+
+
+*** =right
+```{r, fig.height=6, fig.width=7}
+ggplot(data.frame(z=z), aes(x=z)) + 
+  geom_histogram(binwidth=0.5, fill="blue", color="black") + 
+  geom_vline(xintercept=0, size=2)
+```
+
+---- &twocol
+
+# И вот, наконец...
+
+*** =left
+
+![William Sealy Gosset](figure/William_Sealy_Gosset.png)
+
+William Sealy Gosset
+
+*** =right
+t-распеделение Стьюдента (Student, 1908)
+
+$$t=\frac{d}{SE_d}$$
+
+где $d=\bar{x_1} - \bar{x_2}$ - это разность между двумя средними значениями  
+
+$SE_d$ - Общее среднеквадратичное отклонение разности двух средних
+
+$$SE_d = \sqrt{\frac{sd_1^2(n_1-1) +sd_2^2(n_2-1)}{n_1+n_2-2}(\frac{1}{n_1} + \frac{1}{n_2})}$$
+
+Если $n_1 = n_2$, то формула существенно упрощается
+
+$$SE_d = \sqrt{\frac{sd_1^2}{n_1} + \frac{sd_2^2}{n_2}}$$
+
+----
+
+## Таким образом t-распределение это всего лишь _стандартизованное распределение разностей ДВУХ средних значений, взятых из ОДНОЙ генеральной совокупности_!
+
+```{r, echo=FALSE,fig.height=6, fig.width=7,fig.align='center'}
+t <- seq(-10,10,0.1)
+pt <- dt(t, 4)
+ggplot(data.frame(t=t, pt=pt), aes(x=t, y=pt)) + geom_line(size=2) + geom_vline(xinercept=0) + xlab("Standardized difference between means") + ylab("Probability")
+```
+
+Форма этого распределения зависит только от ОДНОГО параметра 
+
+$$df = n_1 + n_2 -2$$
+
+----
+## Задача
+<br>
+<br>
+С какой вероятностью мы можем встретить в ОДНОЙ генеральной совокупности два средних значения (вычисленные по выборкам из 10 объектов, каждая),   
+стандартизированная разность между которыми оказывается больше 2 (или меньше -2)?
+
+$$ \frac{\bar{x_1}-\bar{x_2}}{\sqrt{\frac{sd_1^2}{n_1} + \frac{sd_2^2}{n_2}}} >2$$
+или 
+$$ \frac{\bar{x_1}-\bar{x_2}}{\sqrt{\frac{sd_1^2}{n_1} + \frac{sd_2^2}{n_2}}} <-2$$
+
+
+---
+
++ Эту вероятность можно вычислить строго.
++ Но, для того, чтобы "пощупать руками" суть критерия, давайте смоделируем процесс взятия парных выборок из ОДНОЙ генеральной совокупности. То есть представим себе, что мы много раз (например, 1000) взяли повторные парные выборки из одной и той же генеральной совокупности.
+
+
+```{r}
+t_sample1 <- rep(0,1000)
+
+for (i in 1:1000) {
+  # Берем две выборки
+  samp1 <- rnorm(10, 50,5)
+  samp2 <- rnorm(10, 50, 5)
+  
+  # Стандартизируем значения
+  t_sample1[i] <- (mean(samp1) - mean(samp2))/sqrt(sd(samp1)^2/length(samp1) + sd(samp2)^2/length(samp2))
+}
+```
+
+```{r}
+#Все то же самое, но с функцией rt()
+t_sample2 <- rt(1000, (10 + 10 - 2))
+
+```
+
+---
+
+```{r, echo=FALSE, fig.height=9, fig.width=7, fig.align='center'}
+t_dist <- data.frame(t=t_sample1)
+t_dist$t_exided <- NA
+t_dist$t_exided [abs(t_dist$t) > 2 ]  <- t_dist$t [abs(t_dist$t) > 2 ]
+
+
+pl_t_our <- ggplot(t_dist, aes(x=t)) + geom_histogram(binwidth=0.1, fill="blue", color="black") + geom_line(aes(x=seq(-5,4.99,0.01), y=dt(seq(-5,4.99,0.01), 18)*100), size=1) + geom_vline(xintercept=c(-2,2), linetype=5, size=1) + ggtitle("'Self-made' t-distribution") + xlim(-5,5) + ylim(0, 60) + geom_histogram(aes(x =t_dist$ t_exided), bin = 0.1, fill="red", color="black")
+
+pl_t_r <- ggplot(data.frame(t=t_sample2), aes(x=t)) + geom_histogram(binwidth=0.1, fill="blue", color="black") + geom_line(aes(x=seq(-5,4.99,0.01), y=dt(seq(-5,4.99,0.01), 18)*100), size=1) + geom_vline(xintercept=c(-2,2), linetype=5, size=1) + ggtitle("'Professional' t-distribution, obtained by rt()") + xlim(-5,5)+ ylim(0, 60)
+
+grid.arrange(pl_t_our, pl_t_r, nrow=2)
+```
+
+
+---
+
+## Для оценки интересующей нас вероятности, нам надо понять сколько раз из 1000 мы встретим величину больше 2 (или меньше -2)      
+<br>
+Доля значений t > 2 или t < -2   
+
+```{r}
+p1 <- sum(t_sample1 > 2 | t_sample1 < -2)/length(t_sample1)
+p1
+
+p2 <- sum(t_sample2 > 2 | t_sample2 < -2)/length(t_sample2)
+p2
+
+
+```
+
+---
+
+## Для строгой оценки этой вероятности оценивают долю площади под кривой, описывающей   распределение (кривая плотности вероятности).
+  
+Для заданной границы t>2 (t<-2) это будет отношение закрашенной площади под кривой к общей площади   
+
+
+```{r, echo=F, fig.height=5, fig.width=7, fig.align='center'}
+dt_limit1 <- function(x, t_kr=2, df=18) {
+y <- dt(x, df)
+y[x < -t_kr | x > t_kr] <- NA
+return(y)
+}
+
+pl_t <- ggplot(data.frame(x=c(-6, 6)), aes(x=x))
+pl_t + stat_function(fun=dt, args=list(df=18), geom="area", fill="blue", alpha=1) + stat_function(fun=dt_limit1, args=list(df=18), geom="area", fill="lightgray", alpha=1)+ stat_function(fun=dt, args=list(df=18), size=1.1) + geom_text(aes(x=c(-2, 2), y=-0.01), label=c("-2","2")) + xlab("t-values") + ylab("Probability")
+```
+
+
+----
+
+## Но! Можно поставить вопрос иначе. 
+
+А где находится значение t, которое отделяет область, составляющую, например, 95% площади под кривой?
+
+
+```{r, echo=F, fig.width=7, fig.hight=6, fig.align='center'}
+dt_limit1 <- function(x, t_kr=1.96, df=18) {
+y <- dt(x, df)
+y[x < -t_kr | x > t_kr] <- NA
+return(y)
+}
+
+pl_t <- ggplot(data.frame(x=c(-6, 6)), aes(x=x))
+pl_t + stat_function(fun=dt, args=list(df=18), geom="area", fill="blue", alpha=1) + stat_function(fun=dt_limit1, args=list(df=18), geom="area", fill="lightgray", alpha=1)+ stat_function(fun=dt, args=list(df=18), size=1.1) + geom_text(x=-4, y=0.05, label="Values, \nout of \n 95%") + geom_text(x=4, y=0.05, label="Values, \nout of \n 95%") + geom_text(x=0, y=0.1, label="Values \n inside of \n95% ") + geom_point(aes(x=c(-1.96, 1.96), y=0), size=4) + xlab("t-values") + ylab("Probability")
+```
+
+----
+
++ Можем _договориться_, что нас интересуют только те значения t, которые входят в область 95%. Остальные значения мы будем считать не принадлежащими к данной совокупности. 
+
+
+<br>
+<br>
+
+
+>-  Соответственно, мы будем считать, что те значения t, которые не попадают в эту, _условно_ ограниченную совокупность, не являются *стандартизированными разностями двух средних для выборок, взятых из ОДНОЙ генеральной совокупности*
+
+<br>
+<br>
+
+>- _или иначе_
+<br>
+<br>
+
+>- Если $t > t _{crit}$, то вероятность получить такую стандартизированную разницу средних двух выборок из одной совокупности очень низка (p<0.05). 
+
+----
+<br>
+<br>
+<br>
+
+# Теперь у на есть инструмент для проверки статистических гипотез - *статистический критерий*, или *статистический тест*
+
+----
+
+# ЧАСТЬ 2. Тестирование статистических гипотез
+
++ Формулировка биологической гипотезы
++ Численное выражение биологической гипотезы ($H$)
++ Формулировка антигипотезы ($H_0$ - нулевой гипотезы)
++ Тестирование нулевой гипотезы
+
+--- .prompt
+
+<img src="Figure/underwood.png" width="685" height="540" alt="Underwood, 1997">
+</br>
+(Underwood, 1997)
+
+--- &twocol
+
+# Простейший пример тестирования гипотезы
+
+*** =left
+
+Создадим две выборки из популяций с нормальным распределением величин и заведомо отличающимися значениями $\mu$
+
+```{r}
+set.seed(12345)
+male <- rnorm(100, 130, 5)
+female <- rnorm(100, 129,5)
+```
+
+*** =right
+
+Частотное распределение этих двух выборок выглядит так
+
+```{r, echo=FALSE, fig.height=6, fig.width=5}
+size <- data.frame(L=c(male, female), gender=factor(c(rep("M", length(male)), rep("F", length(female) ))))
+
+pl_m <- ggplot(size [size$gender == "M",], aes(x=L)) + geom_histogram(binwidth=5, fill="blue", color="black") + xlab("Highness (cm)") + ylab("Count") + ggtitle("Boys") + theme_bw()
+
+pl_f <- ggplot(size [size$gender == "F",], aes(x=L)) + geom_histogram(binwidth=5, fill="pink", color="black") + xlab("Highness (cm)") + ylab("Count") + ggtitle("Girls") + theme_bw()
+
+
+# Помечаем на гистограммах средние значения
+pl_m <- pl_m + geom_vline(xintercept=mean(male), color="darkblue", size=2)
+
+pl_f <- pl_f + geom_vline(xintercept=mean(female), color="red", size=2)
+
+# Помещам оба рисунка на одну панель 
+grid.arrange(pl_m, pl_f, nrow=2)
+
+```
+
+---- .prompt
+
+# Сравним две выборки с помощью t-критерия Стьюдента
+
+```{r}
+(t<-t.test(male, female))
+
+```
+---
+
+# Вопрос: Вероятность какого события отражает уровень значимости p=`r t$p.value`?
+
+----
+
+*Уровень значимости p=`r round(t$p.value, 4)`*
+<br>
+Это вероятность получения двух выборок,  взятых из одной генеральной совокупности ($H_0$ верна), с такими же выборочными оценками (средняя и среднеквадратичное отклонение), которые мы имеем. 
+
+```{r, echo=FALSE, warning=FALSE, fig.width=7, fig.height=5, warning=FALSE, fig.align='center'}
+
+tt <- t$statistic
+dff <- t$parameter
+
+pl_t <- ggplot(data.frame(x=c(-6, 6)), aes(x=x))
+pl_t + stat_function(fun=dt, args=list(df=dff), geom="area", fill="gray", alpha=0.1) + stat_function(fun=dt_limit1, args=list(df=dff), geom="area", fill="green", alpha=1) + stat_function(fun=dt, args=list(df=dff), size=1.1) + xlab ("t-values") + ylab("Probability") + geom_point(aes(x = tt, y=0), size=4, color="red") + geom_point(aes(x = -tt, y=0), size=4, color="red") + geom_segment(aes(x = c(-1.5, 1.5), y = 0.05, xend = c(-1.96, 1.96), yend = 0), arrow = arrow(length = unit(0.3, "cm")), size=1.1, color="darkblue") + geom_text(aes(x=0, y=0.09), label="Critical \nt-values \nfor 95% probability", color="black") 
+
+```
+
+Полученное нами эмпирическое значение t = `r round(t$statistic,3)` не попадает в область, ограниченную критическими значениями!  
+Это значит, что ошибочный вывод о существовании различий мы будем делать не более, чем в 5% случаев, если подобный эксперимент будет проводиться многократно. И это нас устраивает, поскольку мы приняли $\alpha=0.05$.
+
+----
+# Допущения (Assumptions) t-критерия   
+>- 1. Нормальное распределение сравниваемых величин   
+>- 2. Равенство дисперсий   
+>- 3. Выборки должны быть сделаны независимо друг от друга      
+
+<br>
+<br>
+>- t-критерий очень чувствителен к нарушению условия 1 и 2 если выборки имеют неравные объемы.   
+>- Лучше сразу планировать сбор материала так, чтобы были сбалансированные выборки.
+
+
+----
+## Почему в полученных результатах нашего теста df=`r round(t$parameter, 2)` дробное число?
+
+R автоматичски вводит поправку на разность дисперсий (используется модифицированная версия теста - Welch-test)   
+<br>
+В этом тесте специально занижается df, что делает китерий более консервативным (то есть он "хуже" отвергает $H_0$)
+
+$$df=\frac{(\frac{sd_1}{\sqrt{n_1}} + \frac{sd_2}{\sqrt{n_2}})} {(sd_1/\sqrt{n_1})^2/(n_1+1) +  (sd_2/\sqrt{n_2})^2/(n_2+1)} - 2$$
+
+---- &twocol
+
+# Двусторонние и односторнние тесты
+
+*** =left
+*Двусторонний тест* 
+$H_0: \mu_1-\mu_2=0$ альтернатива $H: \mu_1\ne\mu_2$ то есть может быть $\mu_1 > \mu_2$  и  $\mu_1 < \mu_2$  
+
+```{r, fig.height=4.5, fig.width=6, echo=FALSE}
+dt_limit1 <- function(x, t_kr=1.96, df=18) {
+y <- dt(x, df)
+y[x < -t_kr | x > t_kr] <- NA
+return(y)
+}
+
+pl_t <- ggplot(data.frame(x=c(-6, 6)), aes(x=x))
+pl_t + stat_function(fun=dt, args=list(df=18), geom="area", fill="blue", alpha=1) + stat_function(fun=dt_limit1, args=list(df=18), geom="area", fill="lightgray", alpha=1)+ stat_function(fun=dt, args=list(df=18), size=1.1) + geom_text(x=-4, y=0.05, label="2.5% values, \nout of \n 95%") + geom_text(x=4, y=0.05, label="2.5% values, \nout of \n 95%") + geom_text(x=0, y=0.1, label="Values, \ninside of \n 95% ") 
+```
+
+
+*** =right
+*Односторонний тест* 
+$H_0: \mu_1-\mu_2=0$ альтернатива $H: \mu_2 > \mu_1$ 
+
+```{r, echo=FALSE, fig.height=4.5, fig.width=6}
+dt_limit2 <- function(x, t_kr=1.65, df=18) {
+y <- dt(x, df)
+y[ x > t_kr] <- NA
+return(y)
+}
+
+pl_t <- ggplot(data.frame(x=c(-6, 6)), aes(x=x))
+pl_t + stat_function(fun=dt, args=list(df=18), geom="area", fill="blue", alpha=1) + stat_function(fun=dt_limit2, args=list(df=18), geom="area", fill="lightgray", alpha=1)+ stat_function(fun=dt, args=list(df=18), size=1.1)  + geom_text(x=4, y=0.05, label="5% values \nout of \n 95%") + geom_text(x=0, y=0.1, label="Values \ninside of \n 95%") 
+```
+
+Отвержение $H_0$ происходит при меньшем значении t. </br>
+В случае с t-критерием будьте осторожны! Используя односторонние тесты, мы повышаем вероятность неправильного отвержения $H_0$. 
+
+
+----
+
+# Протокол применения t-критерия
+
+>- 1.Принимаем априорный пороговый уровень значимости, например $\alpha = 0.05$ 
+>- 2.Для двух сравниваемых выборок вычисляем средние значения и значения срднеквадратичного отклонения   
+>- 3.Вычисляем эмпирическое значение t    
+>- 4.Находим число степеней свободы для данного значения t: 
+>- Если дисперсии равны, то $df=n_1+n2-2$
+>- Если дисперсии не равны, $df=\frac{(\frac{sd_1}{\sqrt{n_1}} + \frac{sd_2}{\sqrt{n_2}})} {(sd_1/\sqrt{n_1})^2/(n_1+1) +  (sd_2/\sqrt{n_2})^2/(n_2+1)} - 2$   
+>- 5.Строим референсное t-распределение для даного значения $df$, характеризующее ситуацию для истинной $H_0$   
+>- 6.Вычисляем величину уровня значимсти (p) <br> <br>Пункты 3-6 за нас может сделать функция `t.test()`
+
+>- 7.Отвергаем $H_0$ если $p<\alpha$, и считаем, что наблюдаются достоверные различия между средними 
+>- 8.Если $p>\alpha$, то считаем, что достоверных различий не выявляется
+
+
+
+
+----
+
+# ЧАСТЬ 3. Пермутационный метод тестирования гипотез
+<br><br>
+Пермутации - это перестановки.
+
+Если две сравниваемые выборки взяты из одной совокупности, то обмен элементами между ними ничего не изменит. Степень различия между выборками (значение статистики) останется более или менее тем же самым.
+
+---
+
+Применим пермутационный метод к нашим двум выборкам, описывающим размеры мальчиков и девочек (`male` и `female`)
+
+```{r}
+head (male)
+head (female)
+```
+
+Введем статистику 
+
+$$d= |\bar{x_1} -\bar{x_2}|$$
+
+```{r}
+d_initial <- abs(mean(male) - mean(female))
+```
+
+При сравнении векторов `male` и `female` d = `r d_initial`
+
+---
+<br>
+<br>
+При пермутациях мы должны поменять местами, например,
+<br>
+<br> 
+male[10] = `r round(male[10],1)`  $\longleftrightarrow$  female[20] = `r round(female[20], 1)`. 
+<br>
+<br>
+
+А еще лучше поменять случайное количество элементов одной выборки на такое же количество элементов из другой выборки.
+
+---
+# Получаем распределение статистики $d_{perm}$
+Для этого мы много раз случайно перемешиваем выборки и после каждой пермутации вычисляем значение статстики $d_{perm}$
+```{r, echo=TRUE}
+Nperm=10000
+dperm <- rep(NA, Nperm)
+
+set.seed(12345)
+for (i in 1:(Nperm-1)) 
+  {
+  BOX <- c(male,female)
+  ord <-sample(1:200, 200)
+  f <- BOX[ord[1:100]]
+  m <- BOX [ord[101:200]]
+  dperm[i]=abs(mean(m) - mean(f))  }
+head(dperm)
+```
+
+---
+# Получаем распределение статистики $d_{perm}$
+
+Посмотрим в конец этого вектора
+
+```{r}
+tail(dperm)
+```
+
+Последнее 10000-е значение не заполнено! </br>
+В него надо вписать исходное, полученное до пермутаций, значение d = `r d_initial`. 
+<br>
+<br>
+Это необходимо, так как мы тестируем гипотезу о принадлежности этого значения случаному распределению.
+
+```{r}
+dperm [Nperm] <- d_initial
+```
+
+---
+
+# Получаем распределение статистики $d_{perm}$
+
+```{r, echo=FALSE,fig.width=8, fig.height=7, warning=FALSE, fig.align='center'}
+dp <- data.frame(d_p=dperm)
+dp$exceeded <- NA
+dp$exceeded [dp$d_p >= d_initial]<- dp$d_p[dp$d_p >= d_initial]
+
+dperm_pl <- ggplot(dp, aes(x=d_p))
+dperm_pl + geom_histogram (bin=0.05, fill="blue", colour="black") + xlab("Permutational d-values") + geom_vline(xintercept=c(d_initial), linetype=2) + geom_histogram(aes(x=dp$exceeded), binwidth=0.05, fill="red", color="black")
+
+```
+
+---
+
+# Расчитаем величину уровня значимости 
+
+$$p_{perm}= \frac{N _{d _{perm} >= d}}{N _{perm}}$$
+
+```{r }
+p_perm <- length(dperm[dperm >= d_initial] ) / Nperm
+```
+
+
+<br>
+Итак, мы получили уровень значимости $p_{perm}$ = `r p_perm` 
+<br>
+Сравним его с уровнем значимоcти, вычисленным с помощью параметрического t-критерия p=`r t$p.value`
+<br>
+Они оба близки и оба выявляют достоверные различия!
+
+
+----
+
+# Summary
+>- 1.Любой статистический критерий работает принципиально так же, как t-критерий: вычисляется значение тестовой статистики, которое сравнивается с референсным  
+распределением, получающимся при истинности $H_0$   
+>- 2.У любого статистического критерия есть свои условия примнимости (assumptions)    
+>- 3. Не надо молиться на уровень значиости p<0.05!   
+
+----
+# Что почтать
+
+Гланц С. Медико-биологическая статистика. М: Практика, 1998. 459 с. (Есть в Сети!)
+
+
+
+
+
+
+
+
