@@ -1,0 +1,738 @@
+---
+title       : Сравнение линейных моделей
+subtitle    : Линейные модели, осень 2014
+author      : Марина Варфоломеева
+job         : Каф. Зоологии беспозвоночных, СПбГУ
+framework   : io2012
+highlighter : highlight.js
+hitheme     : idea
+widgets     : [mathjax]            # {mathjax, quiz, bootstrap}
+mode        : standalone # {selfcontained, standalone, draft}
+---
+
+```{r setup, include = FALSE, cache = FALSE}
+#--------------------------------------------------------------
+# RUN THE FRAGMENT BETWEEN LINES BEFORE COMPILING MARKDOWN
+# to configure markdown parsing
+options(markdown.extensions = c("no_intra_emphasis", "tables", "fenced_code", "autolink", "strikethrough", "lax_spacing", "space_headers", "latex_math"))
+#--------------------------------------------------------------
+# output options
+options(width = 70, scipen = 6, digits = 3) 
+# to render cyrillics in plots use cairo pdf
+options(device = function(file, width = 7, height = 7, ...) {
+  cairo_pdf(tempfile(), width = width, height = height, ...)
+  })
+library(knitr)
+# chunk default options
+opts_chunk$set(fig.align='center', fig.width = 10, fig.height = 6, cache = FALSE, comment="#") 
+
+# this allows for code formatting inline
+knit_hooks$set(inline = function(x) {
+   if (is.numeric(x)) return(knitr:::format_sci(x, 'latex'))
+   x = as.character(x)
+   h = knitr:::hilight_source(x, 'latex', list(prompt = FALSE, 
+                                               size='normalsize', 
+                                               highlight = FALSE))
+   h = gsub("([_#$%&])", "\\\\\\1", h)
+   h = gsub('(["\'])', '\\1{}', h)
+   gsub('^\\\\begin\\{alltt\\}\\s*|\\\\end\\{alltt\\}\\s*$', '', h)})
+```
+
+## Сравнение линейных моделей
+
+- Зачем нужно сравнивать модели?
+- Принципы выбора лучшей линейной модели
+- Тестирование гипотез при помощи сравнения линейных моделей
+- Сравнение моделей по качеству подгонки к данным*
+- Сравнение предсказательной силы линейных моделей с использованием кросс-валидации
+
+### Вы сможете
+
+- Объяснить связь между качеством описания существующих данных и краткостью модели
+- Объяснить, что такое "переобучение" модели
+- Рассказать, каким образом происходит кросс-валидация моделей
+- Протестировать влияние отдельных параметров линейной регрессии при помощи сравнения вложенных моделей
+- Подобрать модель с оптимальной точностью подгонки к данным, оцененной по коэффициенту детерминации с поправкой или по $C _p$ Маллоу
+- Оценить предсказательную силу модели при помощи k-кратной кросс-валидации
+
+- 
+
+```{r, echo=FALSE, message=FALSE}
+library(ggplot2)
+theme_set(theme_bw(base_size = 18))
+library(gridExtra)
+```
+
+--- .segue
+
+# Зачем нужно сравнивать модели?
+
+--- &twocol
+
+## Пример: птицы в лесах Австралии
+
+*** =left
+
+От каких характеристик лесного участка зависит обилие птиц в лесах юго-западной Виктории, Австралия (Loyn, 1987)
+
+56 лесных участков:
+- ABUND - обилие птиц
+- YR.ISOL - год изоляции участка
+- GRAZE - пастбищная нагрузка (1-5)
+- ALT - высота над уровнем моря
+- L10DIST - логарифм расстояния до ближайшего леса
+- L10LDIST - логарифм расстояния до ближайшего большого леса
+- L10AREA - логарифм площади
+
+```{r, R.options=list(width = 45)}
+birds <- read.csv("loyn.csv")
+```
+
+
+*** =right
+
+![forest in Victoria, Australia](./assets/img/vict_m.jpg)
+<small>Mystic Forest - Warburton, Victoria by ¡kuba! on flickr</small>
+
+![Victoria, Australia](./assets/img/map_vict.png)
+
+---
+
+## Нужна оптимальная модель
+
+От каких характеристик лесного участка зависит обилие птиц в лесах юго-западной Виктории, Австралия (Loyn, 1987)
+
+Переменных много, хотим из них выбрать __оптимальный небольшой__ набор:
+
+- При помощи разных критериев подберем несколько подходящих кандидатов
+- Выберем лучшую модель с небольшим числом параметров
+
+--- .segue
+
+# Принципы выбора лучшей линейной модели
+
+## "Essentially, all models are wrong, but some are useful"  (Georg E. P. Box) 
+
+---
+
+## Принципы выбора лучшей модели
+
+Эти критерии конкурируют друг с другом
+
+### Хорошее описание существующих данных
+
+Если мы включим много переменных, то лучше опишем данные
+
+Стандартные ошибки параметров будут большие, интерпретация сложная
+
+Большой $R^2$, маленький MSe
+
+### Парсимония
+
+Минимальный набор переменных, который может объяснить существующие данные
+
+Стандартные ошибки параметров будут низкие, интерпретация простая
+
+--- &twocol
+
+## Компромисс при подборе оптимальной модели:<br />точность / смещенная оценка
+
+*** =left
+
+### Переобучение
+
+Переобучение происходит, когда модель, из-за избыточного усложнения, описывает не только отношения между переменными, но и случайный шум
+
+При увеличении числа предикторов в модели (при ее усложнении), она точнее опишет данные, по которым подобрана, но на новых данных точность предсказаний будет низкой из-за "переобучения" (overfitting).
+
+Легче всего проиллюстрировать на примере полиномиальной регрессии
+
+*** =right
+
+```{r, echo=FALSE, fig.height=7, fig.width=6}
+n <- 10
+set.seed(384)
+x <- rnorm(10, 4, 1.2)
+y <- 10 + 0.59*x  + 0.1*x^2+ 0.001425*x^3 + rnorm(n)
+
+lc <- coef(lm(y ~ x))
+cc <- coef(lm(y ~ poly(x, 3, raw = TRUE)))
+fic <- coef(lm(y ~ poly(x, 5, raw = TRUE)))
+
+lin <- function(x){lc[1] + lc[2]*x}
+cub <- function(x){cc[1] + cc[2]*x + cc[3]*x^2 + cc[4]*x^3}
+fif <- function(x){fic[1] + fic[2]*x + fic[3]*x^2 + fic[4]*x^3 + fic[5]*x^4 + fic[6]*x^5}
+
+lm_eqn = function(coeffs){
+if(length(coeffs) == 2) {
+eq <- substitute(italic(y) == a + b %.% italic(x),
+                 list(a = format(coeffs[1], digits = 2),
+                      b = format(coeffs[2], digits = 2)))
+}
+if(length(coeffs) == 4) {
+  eq <- substitute(italic(y) == a + b %.% italic(x) + c %.% italic(x)^2 + d %.% italic(x)^3,
+                 list(a = format(coeffs[1], digits = 2),
+                      b = format(coeffs[2], digits = 2),
+                      c = format(coeffs[3], digits = 2),
+                      d = format(coeffs[4], digits = 2)))
+}
+if(length(coeffs) == 6) {
+  eq <- substitute(italic(y) == a + b %.% italic(x) + c %.% italic(x)^2 + d %.% italic(x)^3 + e %.% italic(x)^4 + f %.% italic(x)^5,
+                 list(a = format(coeffs[1], digits = 2),
+                      b = format(coeffs[2], digits = 2),
+                      c = format(coeffs[3], digits = 2),
+                      d = format(coeffs[4], digits = 2),
+                      e = format(coeffs[5], digits = 2),
+                      f = format(coeffs[6], digits = 2)))
+}
+  as.character(as.expression(eq))
+  }
+
+pp <- ggplot(data.frame(x = x, y = y), aes(x = x, y = y)) + geom_point() + theme(plot.title = element_text(size = 14))
+under <- pp + stat_function(fun = lin, colour = "red") + labs(title = "Высокая погрешность (недоученная модель)")  + annotate("text", x=1, y=17, label=lm_eqn(lc), hjust=0, size=6, family="Times", face="italic", parse=TRUE)
+right <- pp + stat_function(fun = cub, colour = "red") + labs(title = "Правильная модель ")  + annotate("text", x=1, y=17, label=lm_eqn(cc), hjust=0, size=6, family="Times", face="italic", parse=TRUE)
+over <- pp + stat_function(fun = fif, colour = "red") + labs(title = "Высокая дисперсия (переученная модель)") + annotate("text", x=1, y=17, label=lm_eqn(fic), hjust=0, size=5, family="Times", face="italic", parse=TRUE)
+grid.arrange(under, right, over, nrow = 3)
+```
+
+---
+
+## Критерии и методы выбора моделей зависят от задачи
+
+### Объяснение закономерностей
+- Тестирование гипотез о влиянии факторов или удаление влияния одних переменных, для изучения других
+- Нужны точные тесты влияния предикторов: F-тесты (о нем сейчас) или likelihood-ratio тесты
+
+### Описание закономерностей
+- Описание функциональной зависимости между зависимой переменной и предикторами
+- Нужна точность оценки параметров и парсимония: $C _p$ Маллоу, "информационные" критерии (АIC, BIC, AICc, QAIC, и т.д.)
+
+### Предсказание
+- Предсказание значений зависимой переменной для __новых__ данных
+- Нужна оценка качества модели на новых данных с использованием кросс-валидации (о ней сейчас)
+
+---
+
+## Не позволяйте компьютеру думать за вас!
+
+### Дополнительные критерии для сравнения моделей:
+
+- Диагностические признаки и качество подгонки:
+	- остатки, автокорреляция, кросс-корреляция, распределение ошибок, выбросы и проч.
+- Посторонние теоритические соображения:
+	- разумность, целесообразность модели, простота, ценность выводов
+
+--- .segue
+
+# Тестирование гипотез при помощи сравнения линейных моделей
+
+---
+
+## Для тестирования гипотез о влиянии фактора можно сравнить модели с этим фактором и без него.
+
+- Можно сравнивать для тестирования гипотез только вложенные модели (справедливо для F-критерия и для likelihood-ratio тестов)
+
+---
+
+## Вложенные модели (nested models)
+
+Две модели являются вложенными, если одну из них можно получить из другой, приравнивая некоторые коэффициенты более сложной модели к 0.
+
+Какие из этих моделей вложены и в какие именно?
+
+### Полная модель (full model)
+
+$y _i = \beta _0 + \beta _1 x _1 + \beta _2 x _2 + \epsilon _i$
+
+### Неполные модели (reduced models)
+
+$y _i = \beta _0 + \beta _1 x _1 + \epsilon _i$
+
+$y _i = \beta _0 + \beta _2 x _2 + \epsilon _i$
+
+### Нулевая модель (null model)
+
+$y _i = \beta _0 + \epsilon _i$
+
+> - Неполные модели являются вложенными по отношению к полной модели, нулевая модель - вложенная по отношению к полной и к неполным. 
+- Неполные модели по отношению друг к другу - __не__ вложенные
+
+--- .prompt &twocol
+
+## Задание:
+
+Запишите все вложенные модели для данной полной модели
+
+(1) $y _i = \beta _0 + \beta _1 x _1 + \beta _2 x _2 + \beta _3 x _3 + \epsilon _i$
+
+*** =left
+
+> - Модели:
+  - (2) $y _i = \beta _0 + \beta _1 x _1 + \beta _2 x _2 + \epsilon _i$
+  - (3) $y _i = \beta _0 + \beta _1 x _1 + \beta _3 x _3 + \epsilon _i$
+  - (4) $y _i = \beta _0 + \beta _2 x _2 + \beta _3 x _3 + \epsilon _i$
+  - (5) $y _i = \beta _0 + \beta _1 x _1 + \epsilon _i$
+  - (6) $y _i = \beta _0 + \beta _2 x _2 + \epsilon _i$
+  - (7) $y _i = \beta _0 + \beta _3 x _3 + \epsilon _i$
+  - (8) $y _i = \beta _0 + \epsilon _i$
+
+*** =right
+
+> - Вложенность:
+  - (2)-(4) - вложены в (1)<br /><br /><br />
+  - (5)-(7) - вложены в (1), при этом 
+     - (5) вложена в (1), (2), (3); 
+     - (6) вложена в (1), (2), (4); 
+     - (7) вложена в (1), (3), (4)<br /><br />
+  - (8) - нулевая модель - вложена во все
+
+---
+
+## Сравнение линейных моделей при помощи F-критерия
+
+### Полная модель 
+
+$y _i = \beta _0 + \beta _1 x _{i1} + ... + \beta _k x _{ik} + ... + \beta _p x _{ip} + \epsilon _i$
+
+$df _{reduced, full} = p$, $df _{error, full} = n - p - 1$
+
+### Уменьшенная модель
+
+$y _i = \beta _0 + \beta _1 x _{i1} + ... + \beta _k x _{ik} + \epsilon _i$
+
+$df _{reduced, reduced} = k$, $df _{error, reduced} = n - k - 1$
+
+### F-критерий для сравнения моделей
+
+Есть ли выигрыш от включения фактора в модель?
+
+$$F = \frac {(SS _{error,reduced} - SS _{error,full}) / (df _{reduced, full} - df _{reduced, reduced})} {(SS _{error, full})/ df _{error, full}}$$
+
+--- .prompt
+
+## Задание:
+
+- Запишите формулу модели, которая описывает, как зависит обилие птиц в лесах Австралии (ABUND) от переменных:
+  - YR.ISOL - год изоляции участка
+  - GRAZE - пастбищная нагрузка (1-5)
+  - ALT - высота над уровнем моря
+  - L10DIST - логарифм расстояния до ближайшего леса
+  - L10LDIST - логарифм расстояния до ближайшего большого леса
+  - L10AREA - логарифм площади
+
+```
+frm_full <- 
+```
+
+- Подберите модель, используя эту формулу
+- Какие переменные можно протестировать на предмет возможности исключения из модели?
+
+---
+
+## Решение
+
+L10DIST, L10LDIST, YR.ISOL не влияют
+
+```{r}
+frm_full <- ABUND ~ L10AREA + L10DIST + YR.ISOL + L10LDIST + GRAZE
+lm_full <- lm(frm_full, birds)
+summary(lm_full)
+```
+
+---
+
+## Сравнение линейных моделей при помощи (частного) F-критерия
+
+функция `anova(модель_1, модель_2)` в R
+
+Модели обязательно должны быть вложенными!
+
+---
+
+## Протестируем, нужны ли переменные L10LDIST, L10DIST, YR.ISOL
+
+Переменные, удаление которых __не ухудшает__ модель, можно будет удалить и получить минимальную осмысленную модель (не термин:)
+
+### Тестируем L10LDIST
+
+```{r}
+frm_ldist <- ABUND ~ L10AREA + L10DIST + YR.ISOL + GRAZE
+lm_ldist <- lm(frm_ldist, birds)
+anova(lm_ldist, lm_full)
+```
+
+> - L10LDIST не улучшает модель - выбрасываем
+
+---
+
+## Тестируем L10DIST, при условии, что L10LDIST уже нет в модели
+
+```{r}
+frm_dist <- ABUND ~ L10AREA + YR.ISOL + GRAZE
+lm_dist <- lm(frm_dist, birds)
+anova(lm_dist, lm_ldist)
+```
+
+> - L10DIST не улучшает модель - выбрасываем
+
+---
+
+## Тестируем YR.ISOL, при условии, что L10DIST и L10LDIST нет в модели
+
+```{r}
+frm_yrisol <- ABUND ~ L10AREA + GRAZE
+lm_yrisol <- lm(frm_yrisol, birds)
+anova(lm_yrisol, lm_dist)
+```
+
+> - L10LDIST не улучшает модель - выбрасываем
+
+---
+
+## А вот GRAZE выкинуть не получится
+
+```{r}
+frm_graze <- ABUND ~ L10AREA
+lm_graze <- lm(frm_graze, birds)
+anova(lm_graze, lm_dist)
+```
+
+- GRAZE улучшает модель - нужно оставить
+
+## Минимальная модель
+
+```{r}
+frm_yrisol
+```
+
+--- .segue
+
+# Сравнение моделей по качеству подгонки к данным*
+
+<div class = "footnote">в этой лекции - без информационных критериев</div>
+
+---
+
+## Коэффициент детерминации
+
+Обычный коэффициент детерминации оценивает долю объясненной изменчивости
+
+$$R^2 = \frac {SS _{regression}} {SS _{total}}$$
+
+### $R^2 _{adjusted}$
+
+Доля объясненной изменчивости с поправкой на число предикторов
+
+$$R^2 _{adjusted} = 1 - (1 - R^2) \frac {n-1} {n-k} \le R^2$$
+
+_n_ - число наблюдений,  
+_k_ - количество параметров в модели
+
+### У хорошей модели будет большой $R^2 _{adjusted}$
+
+---
+
+## $C _p$ Мэллоу (Mallow's $C _p$)
+
+Оценивает "общую ошибку предсказания" с использованием _p_-параметров
+
+$$C _p = \frac {SS _{error, p-predictors}}{MS _{error, full}} - (n - 2p)$$
+
+### $C _p$ Мэллоу связан с F-критерием
+
+$$C _p = p + (F _p - 1) (m + 1 - p)$$
+
+_m_ - общее число возможных параметров  
+_p_ - число параметров в уменьшенной модели
+
+### У хорошей модели $C _p \approx p$
+
+- Если нет ошибки предсказания, то $F _p \approx 1$ и $C _p \approx p$
+
+- Если есть ошибка предсказания, то $F _p > 1$ и $C _p > p$
+
+---
+
+## Найдем лучшую из всех моделей по коэффициенту детерминации
+
+```{r}
+library(leaps)
+crit_ar2 <- leaps(x = birds[, c(3, 6:10)], y = birds$ABUND,
+                  names = names(birds[, c(3, 6:10)]), 
+                  method = "adjr2")
+# crit_ar2$size # число предикторов
+# crit_ar2$which # предикторы в модели
+# crit_ar2$adjr2 # R^2 adj. для модели
+
+# Номер строки лучшей модели (модели с макс. adjr2)
+best_ar2 <- which.max(crit_ar2$adjr2)
+# Какие переменные входят в модель?
+crit_ar2$which[best_ar2, ]
+# Записываем формулу лучшей модели по adjr2 
+frm_ar2 <- ABUND ~ YR.ISOL + GRAZE + ALT + L10AREA
+```
+
+<small>В нашем случае переменных немного, можем перебрать все модели кандидаты. Если переменных много, можно использовать пошаговые процедуры (опасно) или тестировать несколько осмысленных кандидатов</small>
+
+--- .prompt
+
+## Задание: 
+
+Выберите лучшую модель по значению $C _p$ Маллоу
+
+Нужно изменить параметр `method` в функции `leaps()`
+
+У лучшей модели будет минимальным модуль разницы между ее числом параметров и $C _p$
+
+---
+
+## Решение
+
+```{r}
+crit_cp <- leaps(x = birds[, c(3, 6:10)], y = birds$ABUND, names = names(birds[, c(3, 6:10)]), method = "Cp")
+# Ищем лучшую модель
+# полную модель нужно исключить
+n_mod <- length(crit_cp$size) 
+best_cp <- which.min(abs(crit_cp$size[-n_mod] - crit_cp$Cp[-n_mod]))
+# Какие переменные входят в модель?
+crit_cp$which[best_cp, ]
+frm_cp <- ABUND ~ GRAZE + L10DIST + L10AREA
+```
+
+---
+
+## Какую из моделей выбрать, если мы хотим предсказывать с их помощью
+
+Теперь у нас есть три многообещающих модели кандидата
+
+```{r}
+frm_yrisol
+frm_ar2
+frm_cp
+```
+
+Оценим их предсказательную силу
+
+--- .segue
+
+# Сравнение предсказательной силы линейных моделей с использованием кросс-валидации
+
+--- &twocol
+
+## Кросс-валидация
+
+Если оценивать качество модели по тем же данным, по которым она была подобрана, оценки будут завышенными
+
+Кросс-валидация решает эту проблему
+
+Делим данные __случайным образом__ на __тренировочное и тестовое подмножества__, обычно в пропорции 60:40, 70:30 или 80:20
+
+```{r, echo=FALSE, fig.height=2}
+df <- data.frame(id = 1:35, Данные = c(rep("тренировочные", 28), rep("тестовые", 7)), Итерация = rep("1", 35))
+df$Данные <- factor(df$Данные, levels = c("тренировочные", "тестовые"))
+ggplot(df, aes(x = id, y = Итерация, fill = Данные)) + geom_tile(colour = "black", stat = "identity") + theme_minimal(base_size = 18) + coord_equal() + labs(x = NULL, y = NULL, title = "Кросс-валидация") + theme(axis.ticks = element_blank(), axis.text = element_blank(), legend.position = "bottom")
+```
+
+*** =left
+
+### Тренировочные данные
+
+Используются для подбора модели (для обучения)
+  
+Чтобы модель была хорошей, тренировочных данных __должно быть много__ 
+
+*** =right
+
+### Тестовые данные
+
+Используются для оценки качества модели
+  
+Чтобы надежно оценить качество модели, тестовых данных __тоже должно быть много__
+
+---
+
+## K-кратная кросс-валидация (k-fold cross-validation)
+
+Делим данные __случайным образом__ на $k$ частей  
+$k - 1$ часть используется для обучения, на $k$-й части тестируется модель  
+Процедура повторяется $k$ раз
+
+```{r, echo=FALSE, fig.height=4}
+k <- 10
+npart <- 4
+df <- expand.grid(id = 1:(k*npart), Итерация = 1:k)
+df$Данные <- "тренировочные"
+df$Данные[unlist(lapply(1:k, function(x) 1:npart + (k*npart+npart)*(x-1)))] <- "тестовые"
+df$Данные <- factor(df$Данные, levels = c("тренировочные", "тестовые"))
+df$Итерация <- factor(df$Итерация, levels = k:1, labels = k:1)
+ggplot(df, aes(x = id, y = Итерация, fill = Данные)) + geom_tile(colour = "black", stat = "identity") + theme_minimal(base_size = 18) + coord_equal() + labs(x = NULL, title = paste0(k, "-кратная кросс-валидация")) + theme(axis.ticks = element_blank(), axis.text.x = element_blank(), legend.position = "bottom")
+```
+
+$k$-кратная кросс-валидация лучше обычной, особенно, если данных не много
+
+---
+
+## RMSE - стандартная ошибка предсказания
+
+$$RMSE = \sqrt { \frac {\sum{(\hat {y _{i}} - y _{i})^2}} {n} }$$
+
+Это параметр, который определяет ширину доверительных интервалов предсказаний
+
+Очень чувствительна к выборосам (альтернатива - MAE - средний модуль ошибок)
+
+Можно сравнивать между моделями, только если они в одинаковых единицах (исходные данные моделей (не)преобразованы одинаково, зависимая переменная в одних и тех же единицах)
+
+Нет жестких границ для RMSE "хорошей" модели, это относительная величина.
+
+Бывает, что критерии противоречат друг другу, тогда решаем с учетом других соображений, например, простоты и интерпретируемости. Лучше меньше параметров.
+
+---
+
+## Этапы сравнения моделей с использованием кросс-валидации
+
+- Делим данные на тренировочное и тестовое подмножества
+
+- Для каждой из моделей-кандидатов повторяем следующие шаги
+  - Подбираем на тренировочном подмножестве модель-кандидат
+  - Используя тестовые данные, предсказываем ожидаемые значение $y$ используя модель-кандидат
+  - Рассчитываем RMSE для модели-кандидата (стандартное отклонение остатков)
+
+$$RMSE = \sqrt { \frac {\sum{(\hat {y _{i}} - y _{i})^2}} {n} }$$
+
+- Сравниваем RMSE всех моделей кандидатов. Модель, у которой минимальное значение RMSE - лучшая
+
+--- &twocol
+
+## Кросс-валидация для линейных моделей
+
+`CVlm`(df = `исходные_данные`, form.lm = `формула`, m = `кратность`)
+
+*** =left
+
+```{r, cv1, R.options=list(width = 55), warning=FALSE, fig.keep='none'}
+library(DAAG)
+val_yrisol <- CVlm(df = birds, form.lm = frm_yrisol, m = 5)
+```
+
+*** =right
+
+```{r, cv1, echo=FALSE, warning=FALSE, results='hide', fig.width=5, fig.align='right'}
+```
+
+--- .prompt
+
+## Задание:
+
+Посчитайте RMSE для модели val_yrisol
+
+$$RMSE = \sqrt { \frac {\sum{(\hat {y _{i}} - y _{i})^2}} {n} }$$
+
+$\hat {y _{i}}$ - это предсказанные во время кросс-валидации значения - `val_yrisol$cvpred`
+
+$y _{i}$ - это реальные наблюдаемые значения зависимой переменной - `val_yrisol$ABUND`
+
+---
+
+## Решение
+
+```{r}
+# RMSE вручную
+sqrt(mean((val_yrisol$cvpred - val_yrisol$ABUND)^2))
+```
+
+### Можно создать пользовательскую функцию для рассчета RMSE
+
+```{r}
+rmse <- function(cv_obj, y_name){
+  sqrt(mean((cv_obj$cvpred - cv_obj[, y_name])^2))
+}
+
+# теперь можно пользоваться функцией
+rmse(val_yrisol, "ABUND")
+```
+
+---
+
+## Задание
+
+- Сделайте 5-кратную кросс-валидацию оставшихся двух моделей и полной модели
+
+```
+frm_cp
+frm_ar2
+frm_full
+```
+
+- Посчитайте их RMSE
+
+Какая из моделей-кандидатов дает более качественные предсказания?
+
+---
+
+## Решение
+
+Кросс-валидация
+
+```{r, cv2, include=FALSE}
+val_cp <- CVlm(df = birds, form.lm = frm_cp, m = 5)
+val_ar2 <- CVlm(df = birds, form.lm = frm_ar2, m = 5)
+val_full <- CVlm(df = birds, form.lm = frm_full, m = 5)
+```
+
+```{r, cv2, eval=FALSE}
+```
+
+Считаем RMSE
+
+```{r}
+rmse(val_cp, "ABUND")
+rmse(val_ar2, "ABUND")
+rmse(val_full, "ABUND")
+```
+
+---
+
+## Какие модели дают более качественные предсказания?
+
+```{r}
+rmse(val_yrisol, "ABUND"); rmse(val_cp, "ABUND") 
+rmse(val_ar2, "ABUND"); rmse(val_full, "ABUND")
+```
+
+Судя по значениям RMSE, это модели
+
+```{r}
+frm_yrisol
+frm_cp
+```
+
+В данном случае можно предпочесть `frm_yrisol` как более простую
+
+---
+
+## Takehome messages
+
+- Модели, которые качественно описывают существующие данные включают много параметров, но предсказания с их помощью менее точны из-за переобучения
+- Для выбора оптимальной модели используются разные критерии в зависимости от задачи
+  - Сравнивая вложенные модели можно отбраковать переменные, включение которых в модель не улучшает ее
+  - Оптимальный набор переменных для более качественного описания __существующих данных__ можно подобрать сравнивая модели по $R^2 _{adjusted}$ и $C _p$ Маллоу
+  - Оценить предсказательную силу модели на __новых данных__ можно при помощи кросс-валидации сравнив ошибки предсказаний
+
+---
+
+## Дополнительные ресурсы
+
+James, G., Witten, D., Hastie, T., Tibshirani, R., 2013. An introduction to statistical learning. Springer.
+  - 2.1.3 The Trade-Off Between Prediction Accuracy and Model Interpretability
+  - 2.2.2 The Bias-Variance Trade-Off
+  - 3.2.2 Some Important Questions
+
+Kuhn, M., Johnson, K., 2013. Applied Predictive Modeling. Springer.
+  - 1.1 Prediction Versus Interpretation
+  - 1.2 Key Ingredients of Predictive Models
+  - 4 Over-Fitting and Model Tuning
+  - 5 Measuring Performance in Regression Models
+
+Quinn, G.G.P., Keough, M.J., 2002. Experimental design and data analysis for biologists. Cambridge University Press.
+  - 6.1.15 Finding the “best” regression model
+  - 6.1.16 Hierarchical partitioning
