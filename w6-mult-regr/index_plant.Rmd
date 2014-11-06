@@ -1,0 +1,449 @@
+---
+title: "Введение в регрессионный анализ: множественная регрессия"
+author: "Вадим Хайтов, Марина Варфоломеева"
+highlighter: highlight.js
+output: html_document
+job: Каф. Зоологии беспозвоночных, СПбГУ
+mode: standalone
+hitheme: idea
+subtitle: Линейные модели на R, осень 2014
+framework: io2012
+widgets: mathjax
+
+---
+
+## Мы рассмотрим
+
++ Технику подгонки множественных регрессионных моделей
++ Технику валидизации множественных регрессионных моделей
+
+### Вы сможете
+
++ Подобрать множественную линейную модель
++ Протестировать ее состоятельность и валидность
++ Дать трактовку результатам 
+
+```{r setup, include = FALSE, cache = FALSE, eval = -3}
+#----------------------------------------------------------------
+# RUN THE FRAGMENT BETWEEN LINES BEFORE COMPILING MARKDOWN
+# to configure markdown parsing
+options(markdown.extensions = 
+          c("no_intra_emphasis",# skip markdown embedded in words
+            "tables",           # create HTML tables
+            "fenced_code",      # treat text as verbatim when surrounded with begin and ending lines with three ~ or ' characters.
+            "autolink",         # create HTML links from urls and email addresses.
+            "strikethrough",    # create strikethroughs by surrounding text with ~~.
+            "lax_spacing",      # allow HTML tags inside paragraphs without being surrounded by newlines.
+            "space_headers",    # add a space between header hashes and the header itself.
+            "latex_math"))      # transforms all math equations into syntactically correct MathJax equations.
+#--------------------------------------------------------------
+# output options
+options(width = 90, # set the maximum number of columns on a line
+        scipen = 6, # fixed notation of floating point numbers, unless it is more than scipen digits wider, else - exponential notation
+        digits = 4) # the number of digits to print when printing numeric values
+
+# to render cyrillics in plots use cairo pdf
+options(device = function(file, width = 7, height = 7, ...) {
+  cairo_pdf(tempfile(), width = width, height = height, ...)
+  })
+
+# chunk default options
+library(knitr)
+opts_chunk$set(cache = FALSE,  results='hold',
+#   fig.align='center',  # default figure alignment
+               warnings = FALSE,
+               message = FALSE,
+               fig.width = 10,      # default figure width
+               fig.height = 6)      # default figure height
+
+# this allows for code formatting inline
+knit_hooks$set(inline = function(x) {
+   if (is.numeric(x)) return(knitr:::format_sci(x, 'latex'))
+   x = as.character(x)
+   h = knitr:::hilight_source(x, 'latex', list(prompt = FALSE, 
+                                               size='normalsize', 
+                                               highlight = FALSE))
+   h = gsub("([_#$%&])", "\\\\\\1", h)
+   h = gsub('(["\'])', '\\1{}', h)
+   gsub('^\\\\begin\\{alltt\\}\\s*|\\\\end\\{alltt\\}\\s*$', '', h)})
+```
+
+--- .segue
+
+# Рабочий пример: Какие факторы определяют распределение функциональных групп растений?
+
+--- &twocol
+
+*** =left
+<img src="figure/USA data points.png" width="400" height="300" >   
+
+(Пример взят из книги Quinn&Keugh,2002; Оригинальная работа: Paruelo & Lauenroth, 1996)
+
+Считается, что распределение C3 растений регулируется только температуой той местности, где они произрастают.
+Проверяется гипотеза о связи распределения C3 растений не только со среднегодовой температурой,  но и с уровнем осадков
+
+*** =right
+
+Зависимая перменная   
+------------------
+`С3` - отностельное обилие травянистых растений, демонстрирующих $C_3$ путь фотосинтеза
+
+Предикторы  
+------------------
+`LAT` - штрота  
+`LONG` - долгота  
+`MAP` -  среднегодовое количество осадков (мм)  
+`MAT` - среднегодвая температура (градусы)   
+`JJAMAP` - доля осадков, выпадающих в летние месяцы   
+`DJFMAP` - доля осадкв, выпадающих в зимние месяцы   
+
+---
+
+## Читаем данные
+
+```{r}
+plant <- read.csv("paruelo.csv")
+plant <- plant[,-2]
+head(plant)
+```
+
+
+---
+
+## Можно ли ответить на вопрос таким методом?
+
+```{r}
+cor(plant)
+```
+
+---
+
+### Проблема 1. Взаимосвязь между переменными может находиться под контролем других переменых (частная корреляция).    
+### Пробема 2. Множественные сравнения.   
+<br>
+<br>
+
+### Необходимо учесть все взаимовлияния в одном анализе
+
+
+
+---
+
+## Нам предстоит построить множественную регрессионную модель
+<br>
+$$y_i = \beta_0 + \beta_1x_{i,1} + \beta_2x_{i,2} + \beta_3x_{i,3} + ... + \beta_px_{i,p} + \epsilon_i$$
+
+<br>
+
+$y_i$ - значение зависимой переменной $Y$ при значении предикторов $X_1 = x_{i,1}$, $X_2 = x_{i,2}$ и т.д.   
+
+$\beta_0$ - свободный член (_intercept_). Значение $Y$ при $X_1=X_2=X_3=....=X_p=0$  
+$\beta_1$ - _частный_ угловой коэффициент для зависимости $Y$ от $X_1$. Показывает насколько единиц изменяется $Y$ при изменении $X_1$ на одну единицу, при условии, что все остальные предикторы не изменяются.   
+$\beta_2$, $\beta_3$, ...., $\beta_p$ - аналогично   
+
+$\epsilon_i$ - варьирование $Y$, не объясняемое данной моделью. 
+
+---
+
+## Геометрически,  это плоскость в многомерном пространстве
+
+```{r, echo=FALSE, fig.show='animate'}
+
+library(rgl)
+x <- plant$MAT
+y <- plant$MAP
+z <- plant$C3
+fit <- lm(z ~ x + y)
+plot3d(x,y,z, type="s", col="red", size=1)
+
+coefs <- coef(fit)
+a <- coefs["x"]
+b <- coefs["y"]
+c <- -1
+d <- coefs["(Intercept)"]
+planes3d(a, b, c, d, alpha=0.5)
+```
+
+
+---
+
+## Проводим исследование данных
+
+```{r scetterPlot, dev='png'}
+library(car)
+scatterplotMatrix(plant[, -2], spread=FALSE)
+```
+
+---
+
+## Явные проблемы
+
+1. Распределение зависимой переменной `C3` очень асимметрично
+2. Есть сильные корреляции между некоторым предикторами. 
+3. Возможна пространственная автокоррелированность. 
+
+### Постоим линейную модель и сразу проверим ее на наличие автокорреляции остатков
+
+--- .prompt
+
+## Задание. Напишите самостоятельно R код, необходимый для подбора уравнения множественной регрессии и сразу проверьте модель на наличие автокорреляции остатков
+
+_Hint 1_. Для того, чтобы видеть названия переменных воспользуйтесь функцией `names()`  
+_Hint 2_. Подумайте какие предикторы не следует включать в модель в соответствии с гипотезой, поставленной в исследовании.   
+_Hint 3_. Проведите тест Дарбина-Уотсона.
+
+---
+
+## Решение
+
+```{r}
+model0 <- lm(C3 ~  MAP + MAT + JJAMAP + DJFMAP, data = plant)
+durbinWatsonTest (model0, max.lag = 3)
+```
+
+
+---
+
+## Наличие положиетльных автокорреляций повашает вероятность ошибки I рода!
+
+Возможное решение - нарушить "градиентный" характер материала.   
+<br>
+Разделим выборку на две части.   
+
+```{r}
+plant1 <- plant[order(plant$LAT), ] # Упорядочиваем описания в соответствии с широтой
+
+include <- seq(1, 73, 2) # Отбираем каждое второе описание
+exclude <- seq(1, 73) [!(seq(1, 73) %in% include)] # Исключаем из списка отобранные описания
+
+plant_modelling <- plant1[include, ]
+plant_testing <- plant1[exclude, ]
+```
+
+---
+
+## Строим линейную модель для сокращенного набора данных
+
+```{r}
+model1 <- lm((C3)^(1/4) ~  MAP + MAT + JJAMAP + DJFMAP, data = plant_modelling)
+
+# Аналогичная запись
+model1 <- lm((C3)^(1/4) ~  .-LONG -LAT, data = plant_modelling)
+```
+
+
+--- 
+
+## Проверим на автокоррелированность остатков полученную модель
+
+```{r}
+durbinWatsonTest(model1, max.lag = 3)
+```
+
+
+---
+
+## Смотрим на полученную модель
+```{r}
+summary(model1)
+```
+
+
+--- 
+
+## Проверка валидности модели
+
+```{r}
+library(ggplot2)
+c3_diag <- fortify(model1)
+```
+
+---
+
+## Смотрим на residual plot
+
+```{r}
+pl_resid <- ggplot(c3_diag, aes(x = .fitted, y = .stdresid, size = .cooksd)) + 
+  geom_point() + 
+  geom_smooth(se=FALSE) + 
+  geom_hline(eintercept=0)
+
+pl_resid
+```
+
+
+---
+
+## Проверяем на нормальность 
+
+```{r qqplot, fig.height= 7}
+qqPlot(model1)
+```
+
+
+--- &twocol
+
+## Проверяем на гетероскедастичность
+
+*** =left
+```{r, warning=FALSE}
+pl_resid
+```
+
+*** =right
+```{r}
+library(lmtest)
+bptest(model1)
+```
+
+
+---
+
+## Проверяем на мультиколлинеарность
+
+_Мультиколлинеарность_ -  наличие линейной зависимости между независимыми переменными (факторами) регрессионной модели.
+
+При наличии мультиколлинеарности оценки параметров получаются неточными, а значит сложно будет дать интерпретацию влияния тех или иных факторов на объясняемую переменную   
+
+Признаки мультиколлинеарности:
+- Большие ошибки оценок параметров
+- Большинство оценок параметров модели недостоверно, но F критерий всей модели свидетельствует о ее стаистической значимости
+
+---
+
+## Фактор инфляции дисперсии (Variance inflation factor)
+
+```{r}
+vif(model1)
+```
+
+---
+
+## Логика вычисления VIF
+
+1. Строим регрессионную модель    
+
+$$x_1 = c_0 + c_2x_2 +c_2x_3 + .... + c_px_p$$
+
+2. Находим $R^2$ для данной модели    
+
+3. $VIF = \frac{1}{1-R^2}$  
+
+---
+
+## Что делать если мультиколлинеарность выявлена?
+
+Решение № 1. Удалить из модели избыточные предикторы   
+1. Удалить из модели предикторы с VIF > 5   
+2. Вновь провести вычисление VIF   
+3. Возможно, удалить предикторы с VIF > 3   
+4. Иногда полезно удалить и предикторы с VIF > 2 (Это позволит сократить набор предикторов, но не увлекайтесь!)   
+
+
+---
+
+## Что делать если мультиколлинеарность выявлена?
+
+Решение № 2. Заменить исходные предикторы новыми пермеными, полученными с помощью метода главных компонент
+
+---
+
+## Удалим из модели избыточный предиктор
+
+```{r}
+model2 <- update(model1, ~ . -DJFMAP)
+vif(model2)
+```
+
+---
+
+## Смотрим на итоги
+
+```{r}
+summary(model2)
+```
+
+--- 
+
+## Какой из факторов MAT,  JJAMAP или DJFMAP оказывает наиболее сильное влияние?
+
+### Для этого надо "уравнять" шкалы, всех предикторов, то есть стандартизировать их 
+
+--- .prompt
+
+## Задание. 
+### Нпишите R-код, который позволяет стандартизировать шкалу предиктора. Стандаризируйе, например, вектор `MAT`
+
+---
+
+## Решение
+
+```{r}
+MAT_stand <- (plant_modelling$MAT - mean(plant_modelling$MAT))/sd(plant_modelling$MAT)
+```
+
+---
+
+## Можно использовать функцию `scale()`
+
+```{r}
+model2_scaled <- lm((C3)^(1/4) ~ scale(MAP) + scale(MAT) + scale(JJAMAP), data = plant_modelling)
+```
+
+---
+
+## Какой фактор оказывает наиболее сильное влияние на долю C3-растенний?
+
+```{r}
+summary(model2_scaled)
+
+```
+
+---
+
+## Если модель хорошая, то она должна хорошо предсказывать 
+
+Мы рассмотрим самый простой случай кросс-валидации
+
+```{r}
+predicted_C3_model1 <- predict(model1, newdata=plant_testing)
+cor(predicted_C3_model1, plant_testing$C3)
+
+
+predicted_C3_model2 <- predict(model2, newdata=plant_testing)
+cor(predicted_C3_model2, plant_testing$C3)
+
+```
+
+---
+
+## Оцениваем валидность финальной модели
+
+```{r}
+durbinWatsonTest(model2)
+bptest(model2)
+vif(model2)
+```
+
+---
+
+## Оцениваем валидность финальной модели
+
+```{r residualPlot, fig.height=7}
+residualPlot(model2)
+```
+
+---
+
+## Summary
+>- При построении множественной регрессии важно, помимо проверки прочих условий применимости, проверить модель на наличие мультиколлинеарности
+>- Если модель построена на основе стандартизированнх значений предикторов, то можно сравнивать влияние этих предикторов.
+>- Кросс-валидация позволяет оценить степень работоспособности модели.
+
+---
+
+## Что почитать
++ Кабаков Р.И. R в действии. Анализ и визуализация данных на языке R. М.: ДМК Пресс, 2014.
++ Quinn G.P., Keough M.J. (2002) Experimental design and data analysis for biologists, pp. 92-98, 111-130
++ Diez D. M., Barr C. D., Cetinkaya-Rundel M. (2014) Open Intro to Statistics., pp. 354-367.
++ Logan M. (2010) Biostatistical Design and Analysis Using R. A Practical Guide, pp. 170-173, 208-211
