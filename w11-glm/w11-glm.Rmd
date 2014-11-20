@@ -1,0 +1,528 @@
+---
+title: "Регрессионный анализ для бинарных данных"
+author: "Вадим Хайтов"
+highlighter: highlight.js
+output: html_document
+job: Каф. Зоологии беспозвоночных, СПбГУ
+mode: standalone
+hitheme: idea
+subtitle: Линейные модели на R, осень 2014
+framework: io2012
+widgets: mathjax
+
+---
+
+# Мы рассмотрим 
++ Регрессионный анализ для бинарных зависимых переменных
++ Некторые положения теории обобщенных линейных моделей (Generalized linear models)
+
+# Вы сможете
++ Объяснить, что такое метод максимального правдоподобия
++ Построить логистическую регрессионную модель
++ Дать трактовку параметрам логистической регрессионной модели 
++ Провести анализ девиансы, основанный на логистичской регрессии
+
+
+```{r setup, include = FALSE, cache = FALSE, eval = -3}
+#----------------------------------------------------------------
+# RUN THE FRAGMENT BETWEEN LINES BEFORE COMPILING MARKDOWN
+# to configure markdown parsing
+options(markdown.extensions = 
+          c("no_intra_emphasis",# skip markdown embedded in words
+            "tables",           # create HTML tables
+            "fenced_code",      # treat text as verbatim when surrounded with begin and ending lines with three ~ or ' characters.
+            "autolink",         # create HTML links from urls and email addresses.
+            "strikethrough",    # create strikethroughs by surrounding text with ~~.
+            "lax_spacing",      # allow HTML tags inside paragraphs without being surrounded by newlines.
+            "space_headers",    # add a space between header hashes and the header itself.
+            "latex_math"))      # transforms all math equations into syntactically correct MathJax equations.
+#--------------------------------------------------------------
+# output options
+options(width = 90, # set the maximum number of columns on a line
+        scipen = 6, # fixed notation of floating point numbers, unless it is more than scipen digits wider, else - exponential notation
+        digits = 4) # the number of digits to print when printing numeric values
+
+# to render cyrillics in plots use cairo pdf
+options(device = function(file, width = 7, height = 7, ...) {
+  cairo_pdf(tempfile(), width = width, height = height, ...)
+  })
+
+# chunk default options
+library(knitr)
+opts_chunk$set(
+#   fig.align='center',  # default figure alignment
+               warnings = FALSE,
+               message = FALSE,
+               fig.width = 10,      # default figure width
+               fig.height = 6)      # default figure height
+
+# this allows for code formatting inline
+knit_hooks$set(inline = function(x) {
+   if (is.numeric(x)) return(knitr:::format_sci(x, 'latex'))
+   x = as.character(x)
+   h = knitr:::hilight_source(x, 'latex', list(prompt = FALSE, 
+                                               size='normalsize', 
+                                               highlight = FALSE))
+   h = gsub("([_#$%&])", "\\\\\\1", h)
+   h = gsub('(["\'])', '\\1{}', h)
+   gsub('^\\\\begin\\{alltt\\}\\s*|\\\\end\\{alltt\\}\\s*$', '', h)})
+```
+
+
+----
+
+# Бинарные данные - очень распространенный тип зависимых переменных
+
++ Вид есть - вида нет
++ Кто-то в результате эксперимента выжил или умер
++ Пойманное животное заражено паразитами или здорово
++ Команда выиграла или проиграла 
+
+и т.д.
+
+Для моделирования таких данных метод наименьших квадратов не годится
+
+---- &twocol
+
+# На каком острове лучше искать ящериц?
+
+*** =left
+Пример взят из книги Quinn & Keugh (2002)
+
+Оригинальная работа Polis et al. (1998)
+```{r}
+liz <- read.csv("polis.csv")
+head(liz)
+```
+
+*** =right
+<img src="figure/Uta.jpg" width="500" height="500" >
+
+
+---- &twocol
+
+# Зависит ли встречаемость ящериц от характеристик острова?
+
+*** =left
+Обычную линейную регрессию можно подобрать...  
+```{r}
+fit <- lm(PA ~ PARATIO, data = liz)
+summary(fit)
+```
+
+
+*** =right
+ ...но она категорически не годится
+
+```{r, echo=FALSE, fig.width=7}
+library(ggplot2)
+
+ggplot(liz, aes(x=PARATIO, y=PA)) + geom_point() + geom_smooth(method="lm", se=FALSE)
+```
+
+
+---- &twocol
+
+# Эти данные лучше описывает логистическая кривая
+
+*** =left
+```{r, echo=FALSE, fig.width=6}
+ggplot(liz, aes(x=PARATIO, y=PA)) + geom_point() + geom_smooth(method="glm", family="binomial", se=FALSE) + ylab("Predicted probability of presence")
+```
+
+*** =right
+Эта кривая описывается такой формулой
+
+$$ \pi(x) = \frac{e^{\beta_0+\beta_1x}}{1+e^{\beta_0+\beta_1x}} $$
+
+
+
+-----
+
+# Зависимую величину можно представить несколькими способами 
+
+>- 1. Дискретный результат: 1 или 0
+>- 2. Вероятность: $\pi = \frac{N_1}{N_{total}}$ варьирует от 0 до 1
+>- 3. Шансы (odds): $g=\frac{\pi}{1-\pi}$ варьируют от 0 до $+\infty$
+
+-----
+
+# Вероятность и шанс
+
+Вероятность – это отношение, выражающее то, насколько возможно данное событие по отношению к другим исходам.
+
+<br>
+
+Шансы - это отношение того, что событие произойдет, к тому, что оно не произойдет. 
+
+>- Логиты (logit):  $\ln(g)=\ln(\frac{\pi}{1-\pi})$ варьируют от  $-\infty$ до $+\infty$
+
+
+-----
+
+# Логистическая модель после логит-перобразования становится линейной
+
+$$ g(x)=\ln(\frac{\pi(x)}{1-\pi(x)})=\beta_0 + \beta_1x$$
+
+-----
+
+# Для подбора параметров уравнения применяется метод максимального правдоподобия 
+
+
+$$ g(x)=\ln(\frac{\pi(x)}{1-\pi(x)})=\beta_0 + \beta_1x$$
+
+## Метод максимального правдоподбия применяется для тех случаев, когда распределение остатков не может быть описано нормальным распеделением
+<br>
+В результате итерационных проедур происходит подбор таких коэффициентов, при которых вероятность получения имеющегося у нас набора данных оказывается максимальной.
+
+------
+
+# В основе метода максимального лежит вычисление функции правдоподобия
+
+
+$$ Lik(\beta_0, \beta_1) = \Pi L_i$$
+
+Удобнее работать с логарифмом функции максимльного правдоподобия - $logLik$
+
+----
+
+# Функция максимального правдоподобия оценивает вероятность получения наших данных при условии страведливости данной модели 
+
+----
+
+# Подберем модель с помощью функции `glm()` 
+
+```{r}
+liz_model <- glm(PA ~ PARATIO , family="binomial", data = liz)
+summary(liz_model)
+```
+
+----
+
+# В результатах появились новые термины: 
+
+`z value`  
+`Null deviance`  
+`Residual deviance`   
+`AIC`и
+
+-----
+
+# z value
+
+Это величина критерия Вальда (Wald statistic) - аналог t-критерия   
+
+Используется для проверки $H_0: \beta_1=0$   
+
+$$z=\frac{b_1}{SE_{b_1}}$$
+
+Сравнивают со стандартизованным нормальным распределением (z-рспределение)   
+
+Дает надежные оценки p-value при больших выборках  
+
+-----
+
+# Более надежные результаты дает тест отношения правдоподобий (Likelihood ratio test)
+
+$$ LR = 2\ln(\frac{Lik_l}{Lik_s}) = 2(logLik_l - logLik_s)$$
+
+
+-----
+
+# Null deviance и Residual deviance
+
+>- _"Насыщенная" модель_ - модель, подразумевающая, что каждая из n точек имеет свой собственный параметр, следовательно надо подобрать n параметров. Вероятность существования данных для такой модели равна 1. $logLik_{satur}= ln(1) = 0$
+
+>- _"Нулевая" модель_ - модель подразумевающая, что для описания всех точек надо подобрать только 1 параметр. Эта модель включает только свободный член $g(x) = \beta_0$.  У этой модели есть значение  $logLik_{nul}$ 
+  
+>- _"Предложенная" модель_ - модель, подобранная в нашем анализе $g(x) = \beta_0 + \beta_1x$ для нее есть $logLik_{prop}$  
+
+-----
+
+# Null deviance и Residual deviance
+
+### Девианса - это оценка отклонения логарифма максимального правдоподобия одной модели от логарифма максимального правдоподобия другой модели.  
+
+Остаточная девианса: $2(logLik_{satur} - logLik_{prop})=-2logLik_{prop}$    
+Нулевая девианса: $2(logLik_{satur} - logLik_{nul})=-2logLik_{nul}$   
+
+Проверим
+```{r}
+(Dev_resid <- -2*as.numeric(logLik(liz_model))) #Остаточная девианса
+
+(Dev_nul <- -2*as.numeric(logLik(update(liz_model, ~-PARATIO)))) #Нулевая девианса
+```
+
+----
+
+# По соотношению нулевой девиансы и остаточной девиансы можно понять насколько хороша модель
+
+$$ G^2 = -2(logLik_{nul} - logLik_{prop})$$
+
+
+
+```{r}
+(G2 <- Dev_nul - Dev_resid)
+```
+
+>- $G^2$ - это девианса полной и редуцированной модели  
+>- $G^2$ - аналог $SS_{residuals}$ в обычном регрессионном анализе  
+>- $G^2$ - подчиняется $\chi^2$ распределению (с параметом df = 1) если нулевая модель и предложенная модель не отличаются друг от друга.
+>- $G^2$ можно использовать для проверки нулевой гипотезы  $H_0: \beta_1=0$
+
+-----
+
+# Анализ девиансы
+
+Это аналог дисперсионного анализа для сравния полной и редуцированной модели
+
+```{r}
+anova(liz_model, test="Chi")
+```
+
+-----
+
+# AIC - Информационный критерий Акаике (Akaike Information Criterion)
+
+
+$$ AIC = - 2logLik_{prop} +  2p$$ 
+
+где $logLik_{prop}$ - логарифм функции правдоподобия для предложенной модели  
+$2p$ - штраф за введение в модель $p$ параметров
+
+---- 
+
+# Задание
+
+Расчитайте вручную критерий Акаике для нашей модели
+
+-----
+
+# Решение
+
+```{r}
+(2*2 - 2*as.numeric(logLik(liz_model))) 
+
+#или
+
+AIC(liz_model)
+```
+
+-----
+
+# Как трактовать коэффициенты подобранной модели?
+
+$$ g(x)=\ln(\frac{\pi(x)}{1-\pi(x)})=\beta_0 + \beta_1x$$
+
+```{r}
+coef(liz_model)
+```
+
+>- $\beta_0$ - не имеет особого смысла, просто поправочный коэффициент
+
+>- $\beta_1$ - _на сколько_ единиц изменяется _логарифм_ величины шансов (odds) при изменении на одну единицу значения предиктора <br> <br> Тратктовать такую величину неудобно и трудно. Хотя по знаку $\beta_1$ можно сазу понять возрастает ли вероятность или снижается.   
+
+
+-----
+
+# Немного алгебры...
+
+посмотрим как изменится $g(x)=\ln(\frac{\pi(x)}{1-\pi(x)})$ при изменении предиктора на 1
+
+$$g(x+1) - g(x) = ln(odds_{x+1}) - ln(odds_x)  = ln(\frac{odds_{x+1}}{odds_x})$$
+
+>-Задание: завершите алгебраическое преобразование
+
+-----
+
+# Решение
+
+$$ln(\frac{odds_{x+1}}{odds_x}) = \beta_0 + \beta_1(x+1) - \beta_0 - \beta_1x = \beta_1$$
+
+$$ln(\frac{odds_{x+1}}{odds_x}) = \beta_1$$
+
+$$\frac{odds_{x+1}}{odds_x} = e^{\beta_1}$$
+
+
+-----
+
+# Полученная величина имеет определенный смысл и называтся отношением шансов (odds ratio)
+
+```{r}
+exp(coef(liz_model)[2])
+```
+
+Отношение шансов (odds ratio) показывает _во сколько_ раз изменяется отношение шансов встретить ящерицу при увеличении отношения периметра острова к его площади на одну единицу
+
+Отношение шансов изменяется в `r exp(coef(liz_model)[2])` раза. То есть, чем меньше остров, тем меньше шансов встретить ящерицу
+
+---- &twocol
+
+# Подобранные коэффициенты позволяют построить логистическую кривую
+
+
+*** =left
+```{r, fig.widtht=7, echo=FALSE}
+ggplot(liz, aes(x=PARATIO, y=PA)) + geom_point() + 
+  geom_smooth(method="glm", family="binomial", se=TRUE) + 
+  ylab("Predicted probability of presence") + 
+  xlab("Island parameters (PARATIO")
+```
+
+*** =right
+Эта кривая описывается такой формулой
+
+$$ \pi(x) = \frac{e^{\beta_0+\beta_1x}}{1+e^{\beta_0+\beta_1x}} $$
+
+Кривая имеет доверительный интервал (серая область)
+
+------
+
+# Задание: Найдите границы 95% доверительного интервала для параметров построенной модели и для отношения шансов 
+
+-----
+
+# Решение
+
+Доверительные интервалы для коэффициентов:
+```{r}
+confint(liz_model) # для логитов
+exp(confint(liz_model)) # для отношения шансов 
+
+```
+
+
+---- .segue
+
+# Множественная логистическая регрессия
+
+
+
+---- &twocol
+
+# От чего зависит уровень смертности пациентов, выписанных из реанимации?   
+
+*** =left 
+Данные, полученные на основе изучения 200 историй болезни пациентов одного из американских госпиталей   
+`STA`: Статус (0 = Выжил, 1 = умер)   
+`AGE`: Возраст  
+`SEX`: Пол  
+`RACE`: Раса  
+`SER`: Тип мероприятий в реанимации (Medical, 1 = Surgical)  
+`CAN`: Присутствует ли онкология? (No,Yes)  
+`CRN`: Присутсвует ли почечная недостаточность (No, Yes)  
+`INF`: Наличие инфекции при госпитализации (No, Yes)   
+`CPR`: Была ли сердечно-легочная реанимация (No, Yes)   
+`SYS`: Давление (in mm Hg)   
+
+*** =right 
+
+`HRA`: ЧСС (beats/min)   
+`PRE`: Были ли случаи реанимации ранее (0 = No, 1 = Yes)   
+`TYP`: Тип госпитализации (Elective, Emergency)   
+`FRA`: Есть ли случаи переломов костей (No, Yes)   
+`PO2`: Концентрация кислорода в крови (1 = >60, 2 = 60)   
+`PH`: PH from initial blood gases (1 = 7.25, 2 <7.25)   
+`PCO`: Концентрация углекислого газа в крови (1 = 45, 2 = >45)    
+`BIC`: Bicarbonate from initial blood gases (1 = 18, 2 = <18)    
+`CRE`: Концентрация кретинина в крови (1 = 2.0, 2 = >2.0)    
+`LOC`: Был ли пациент в сознании при госпитализации (1 = no coma or stupor, 2= deep stupor, 3 = coma)    
+
+-----
+# Смотрим на данные
+
+```{r}
+surviv <- read.table("ICU.csv", header=TRUE, sep=";")
+head(surviv)
+```
+
+
+----
+
+# Строим модель
+```{r}
+surv_model <- glm(STA ~ . , family = "binomial", data = surviv)
+summary(surv_model)
+```
+
+---
+
+# Проведем анализ девиансы
+
+```{r}
+anova(surv_model, test="Chi")
+```
+
+---
+
+# Строим сокращенную модель
+
+```{r}
+surv_model_reduced <- glm(STA ~ AGE + TYP + PH + PCO + LOC, family = "binomial", data = surviv)
+
+anova(surv_model, surv_model_reduced, test = "Chi")
+
+```
+
+----
+
+# Посмотримм на AIC полной и сокращенной моделей
+
+```{r}
+AIC(surv_model, surv_model_reduced)
+```
+
+<br>
+Предпочтение отдается той модели, у которой AIC меньше
+
+---
+
+```{r}
+summary(surv_model_reduced)
+```
+
+----
+
+# Вопрос: Во сколько раз изменяется отношение шансов при условии, что пациента госпитализировали в экстренном порядке?
+
+Hint: Вам понадобится переменная `TYP`
+
+-----
+
+# Решение
+
+```{r}
+exp(coef(surv_model_reduced)[3])
+```
+
+---- &twocol
+
+# Как изменяется вероятность смерти после реанимации в зависимости от возраста?
+
+*** =left
+
+```{r, echo=FALSE}
+ggplot(surviv, aes(x=AGE, y=STA)) + 
+  geom_point() +  
+  geom_smooth(method="glm", family="binomial", se=TRUE) + 
+  ylab("Predicted probability of death") + xlab("Age")
+
+```
+
+
+
+----
+
+# Summary
+
+>- Для моделирования бинарных данных применяется логистическая регрессия
+>- Оценка коэффициентов логистической регресси производится методом максимального правдоподобия
+>- Для проверки нулевой гипотезы о наличии зависимости применяют тест отношений правдоподобия
+
+----
+
+# Что почитать
+
++ Кабаков Р.И. R в действии. Анализ и визуализация данных на языке R. М.: ДМК Пресс, 2014.
++ Quinn G.P., Keough M.J. (2002) Experimental design and data analysis for biologists, pp. 359- 371
+
