@@ -2,14 +2,13 @@
 title: "Введение в регрессионный анализ. Часть 1"
 author: "Вадим Хайтов, Марина Варфоломеева"
 highlighter: highlight.js
-output: html_document
+output: word_document
 job: Каф. Зоологии беспозвоночных, СПбГУ
 mode: standalone
 hitheme: idea
 subtitle: Линейные модели на R, осень 2014
 framework: io2012
 widgets: mathjax
-
 ---
 
 ## Мы рассмотрим 
@@ -422,14 +421,14 @@ y1 <- 5*x + 50 + rnorm(n, 0, 2)
 y2 <- -5*x + 50 + rnorm(n, 0, 2)
 y3 <- 0*x + 50 + rnorm(n, 0, 2)
 label <- c(rep("Positive slope",n), rep("Negqtive slope", n), rep("Zero slope", n))
-pl_1 <- ggplot(data.frame(x = rep(x, 3), y = c(y1, y2, y3), label = label), aes(x = x, y = y, color=label)) + geom_point() + xlab("Independent (X)") + ylab("Dependent (Y)") + xlim(0, 25) + guides(color=F) + geom_abline(aes(intercept=50, slope=c(-5,0,5)), size=1) + ggtitle("Constant intercepts \n Different slopes")
+pl_1 <- ggplot(data.frame(x = rep(x, 3), y = c(y1, y2, y3), label = label), aes(x = x, y = y, color=label)) + geom_point() + xlab("Independent (X)") + ylab("Dependent (Y)") + xlim(0, 25) + guides(color=F) + geom_abline(aes(intercept=50, slope=0, size=0.1)) + geom_abline(aes(intercept=50, slope=-5, size=0.1))+ geom_abline(aes(intercept=50, slope=5, size=0.1)) + ggtitle("Constant intercepts \n Different slopes")
 
 x <- rnorm(n, 10, 5)
 y1 <- 5*x + 0 + rnorm(n, 0, 2)
 y2 <- 5*x + 30 + rnorm(n, 0, 2)
 y3 <- 5*x + 60 + rnorm(n, 0, 2)
 label <- c(rep("Intercept = 0",n), rep("Intercept = 30", n), rep("Intercept = 60", n))
-pl_2 <- ggplot(data.frame(x = rep(x, 3), y = c(y1, y2, y3), label = label), aes(x = x, y = y, color=label)) + geom_point() + xlab("Independent (X)") + ylab("Dependent (Y)") + xlim(0, 25) + guides(color=F) + geom_abline(aes(intercept=c(30, 0, 60), slope=c(5, 5, 5)), size=1) + ggtitle("Different intercepts \n Constant slopes")
+pl_2 <- ggplot(data.frame(x = rep(x, 3), y = c(y1, y2, y3), label = label), aes(x = x, y = y, color=label)) + geom_point() + xlab("Independent (X)") + ylab("Dependent (Y)") + xlim(0, 25) + guides(color=F) + geom_abline(aes(intercept=60, slope=5, size=1))+ geom_abline(aes(intercept=30, slope=5, size=1))+ geom_abline(aes(intercept=0, slope=5, size=1)) + ggtitle("Different intercepts \n Constant slopes")
 
 
 x <- rnorm(n, 10, 5)
@@ -437,7 +436,7 @@ y1 <- 0*x + 0 + rnorm(n, 0, 2)
 y2 <- 0*x + 30 + rnorm(n, 0, 2)
 y3 <- 0*x + 60 + rnorm(n, 0, 2)
 label <- c(rep("Intercept = 0",n), rep("Intercept = 30", n), rep("Intercept = 60", n))
-pl_3 <- ggplot(data.frame(x = rep(x, 3), y = c(y1, y2, y3), label = label), aes(x = x, y = y, color=label)) + geom_point() + xlab("Independent (X)") + ylab("Dependent (Y)") + xlim(0, 25) + guides(color=F) + geom_abline(aes(intercept=c(30, 0, 60), slope=c(0, 0, 0)), size=1) + ggtitle("Different intercepts \n Zero slopes")
+pl_3 <- ggplot(data.frame(x = rep(x, 3), y = c(y1, y2, y3), label = label), aes(x = x, y = y, color=label)) + geom_point() + xlab("Independent (X)") + ylab("Dependent (Y)") + xlim(0, 25) + guides(color=F) + geom_abline(aes(intercept=60, slope=0, size=1)) + geom_abline(aes(intercept=30, slope=0, size=1))+ geom_abline(aes(intercept=0, slope=0, size=1))+ ggtitle("Different intercepts \n Zero slopes")
 
 grid.arrange(pl_1, pl_2, pl_3, nrow=1)
 
@@ -627,7 +626,7 @@ pl_brain +
   geom_ribbon(data=brain_predicted, aes(y=fit, ymin=lwr, ymax=upr, fill = "Conf. area for prediction"), alpha=0.2) + 
   geom_smooth(method="lm", aes(fill="Conf.interval"), alpha=0.4) + 
   scale_fill_manual("Intervals", values = c("green", "gray")) + 
-  ggtitle("Confidence interval \n and confidence area for prediction")+ xlim(600000, 1300000) + geom_text(label="Interpolation", aes(x=950000, y=100)) + geom_text(label="Extrapolation", aes(x=c(700000, 1200000), y=70))
+  ggtitle("Confidence interval \n and confidence area for prediction")+ xlim(600000, 1300000) + geom_text(label="Interpolation", aes(x=950000, y=100)) + geom_text(label="Extrapolation", aes(x=700000, y=70)) + geom_text(label="Extrapolation", aes(x=1200000, y=70))
 
 ``` 
 
